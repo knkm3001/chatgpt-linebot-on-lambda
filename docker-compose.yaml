@@ -1,0 +1,35 @@
+version: "3.6"
+
+services:
+  lambda:
+    container_name: lambda-local
+    build: .
+    volumes:
+      - $HOME/.aws/:/root/.aws/
+    ports:
+      - 9000:8080
+    env_file:
+      - .env
+    depends_on:
+      - dynamodb
+
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath ./data
+    container_name: dynamodb-local
+    ports:
+      - 8000:8000
+    volumes:
+      - "./dynamodb:/home/dynamodblocal/data"
+    working_dir: /home/dynamodblocal
+
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    tty: true
+    container_name: dynamodb-admin
+    ports:
+      - "8001:8001"
+    depends_on:
+      - dynamodb
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
