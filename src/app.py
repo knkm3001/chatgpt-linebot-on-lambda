@@ -15,11 +15,12 @@ from linebot.models import TextSendMessage
 from conf import system_prompt
 import db_utils
 
-local_debug = False # ローカル開発時はTrueにする
+use_local_db = False # localのdynamoDBに接続
 
-record_limit = os.environ['RECORD_FETCH_NUM']
-line_bot_api = LineBotApi(os.environ['LINE_CHANNEL_ACCESS_TOKEN'])
 OPENAI_APIKEY = os.environ['OPENAI_APIKEY']
+DO_LINE_REPLY = bool(int(os.environ['DO_LINE_REPLY']))
+record_limit = int(os.environ['RECORD_FETCH_NUM'])
+line_bot_api = LineBotApi(os.environ['LINE_CHANNEL_ACCESS_TOKEN'])
 
 logger = getLogger(__name__)
 level_name = os.environ.get('LOG_LEVEL')
@@ -28,7 +29,7 @@ if not isinstance(level, int):
     level = INFO # デフォルト
 logger.setLevel(level)
 
-if local_debug:
+if use_local_db:
     DYNAMODB_ENDPOINT = os.environ['DYNAMODB_ENDPOINT']
     AWS_ACCESS_ID = os.environ['AWS_ACCESS_ID']
     AWS_SECRET_ACCESS_KEY = os.environ['AWS_SECRET_ACCESS_KEY']
@@ -57,12 +58,17 @@ def ask(message_log:list = []):
 	        'Content-Type': 'application/json',
 	        'Authorization': 'Bearer ' + OPENAI_APIKEY
         }
-    
+    logger.info(f'cahtGPT APIへリクエスト実行')
     response = requests.post(url, headers=headers, data=json.dumps(data))
     response_data = response.json()
-    # ChatGPTからの回答を取得する
     logger.debug(f'response_data: {response_data}')
-    ans_message = response_data['choices'][0]['message']['content'].strip()
+
+    if response_data.get('error'):
+        logger.critical(f'chatGPT API error: {response_data}')
+        ans_message = 'ちょっと調子がわるいオリ...。ごめんなさいだけどもしばらく休ませてオリ...。'
+    else:
+        ans_message = response_data['choices'][0]['message']['content'].strip()
+    
     message_log.append({'role':'assistant','content':ans_message})
 
     return ans_message, message_log
@@ -71,7 +77,7 @@ def ask(message_log:list = []):
 def create_message_log(system_prompt:list,message_text:str,line_user_id:str):
     """ chatGPTの文脈推定を行うため、過去のログを取得して、APIに渡すmessagesを作成する """
 
-    records = db_utils.query(table,line_user_id,record_limit=40)
+    records = db_utils.query(table,line_user_id,record_limit)
     logger.debug(f'records: {records}')
     ex_messages = [record['ChatContent'] for record in records['Items']]
     message_log = ex_messages[::-1] + [{'role':'user','content':message_text}]
@@ -162,8 +168,9 @@ def lambda_handler(event, context):
                     ans_message,message_log = ask(message_log)
                     db_utils.put(table,line_user_id,chat_content=message_log[-1]) # chatGPTのメッセージを追加
                 
-                if not local_debug:
-                    # ローカル開発に実行する場合はログ等からreply_tokenを取得してペイロードに埋め込むこと
+                if DO_LINE_REPLY:
+                    logger.info(f'LINE レスポンス実行')
+                    # ローカル開発に実行する場合はログ等からLINEのreply_tokenを取得してペイロードに埋め込むこと
                     line_bot_api.reply_message(reply_token, TextSendMessage(text=ans_message)) 
     
     # エラーが起きた場合
