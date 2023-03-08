@@ -1,8 +1,6 @@
 import os
 import json
-
 import traceback
-from typing import Tuple
 from logging import getLogger, getLevelName, INFO
 
 import tiktoken
@@ -163,8 +161,8 @@ def lambda_handler(event, context):
                     db_utils.put(table,line_user_id,chat_content=message_log[-1])
                 else:
                     message_log = create_message_log(system_prompt,message_text,line_user_id)
-                    logger.debug(f'message_log: {message_log}')
                     db_utils.put(table,line_user_id,chat_content=message_log[-1]) # ユーザのメッセージを追加
+                    logger.debug(f'message_log: {message_log}')
                     ans_message,message_log = ask(message_log)
                     db_utils.put(table,line_user_id,chat_content=message_log[-1]) # chatGPTのメッセージを追加
                 
