@@ -3,3 +3,4 @@ tiktoken
 requests
 line-bot-sdk
 cryptography
+beautifulsoup4
